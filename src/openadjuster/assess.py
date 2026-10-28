@@ -36,6 +36,7 @@ from claimdocbench.domain import (
 from openadjuster import normalize as nz
 from openadjuster.extract import Document, read_document
 from openadjuster.llm import LocalModel
+from openadjuster.ocr import Box
 
 INJECTION = re.compile(
     r"(ignore (all |any )?(previous|prior|the) (rules|instructions)|disregard|system instruction|"
@@ -73,6 +74,17 @@ class Registry:
         return names[match[0]] if match else None
 
 
+Evidence = tuple[str, Box]  # (doc_id, box)
+
+
+@dataclass
+class Check:
+    label: str
+    ok: bool
+    clause: str
+    evidence: list[Evidence] = field(default_factory=list)
+
+
 @dataclass
 class Assessment:
     packet_id: str
@@ -80,9 +92,25 @@ class Assessment:
     adjudication: Adjudication | None
     integrity: list[str]
     injection: list[str]
-    checks: list[tuple[str, bool, str]] = field(default_factory=list)
+    checks: list[Check] = field(default_factory=list)
     confidence: float = 0.0
     seconds: float = 0.0
+    facts: ClaimFacts | None = None
+    member: dict[str, Any] | None = None
+    submitted_on: str = ""
+    item_evidence: list[Evidence | None] = field(default_factory=list)
+    injection_evidence: list[Evidence] = field(default_factory=list)
+
+
+def _ev(doc: Document | None, *names: str) -> list[Evidence]:
+    if doc is None:
+        return []
+    out = []
+    for n in names:
+        v = doc.values.get(n)
+        if v and v.box:
+            out.append((doc.doc_id, v.box))
+    return out
 
 
 def _member(record: dict[str, Any]) -> Member:
@@ -146,11 +174,19 @@ def assess_packet(
 
     record = registry.members.get(manifest["member_id"])
     if record is None:
-        return Assessment(manifest["packet_id"], docs, None, [], [], confidence=0.3)
+        return Assessment(
+            manifest["packet_id"],
+            docs,
+            None,
+            [],
+            [],
+            confidence=0.3,
+            submitted_on=manifest["submitted_on"],
+        )
     member = _member(record)
     receipt, form = by_type.get("receipt"), by_type.get("claim_form")
     mc, referral = by_type.get("medical_certificate"), by_type.get("referral_letter")
-    checks: list[tuple[str, bool, str]] = []
+    checks: list[Check] = []
 
     # Documents present. An unreadable page is assumed to be the receipt if none was found.
     present = {DocType(t) for t in by_type}
@@ -165,7 +201,14 @@ def assess_packet(
     )
     person = next((p for p in member.persons if nz.same_name(p.full_name, patient_name)), None)
     person_id = person.person_id if person else "NOT-LISTED"
-    checks.append(("Patient is a covered person", bool(person and person.covered), "C2.1"))
+    checks.append(
+        Check(
+            "Patient is a covered person",
+            bool(person and person.covered),
+            "C2.1",
+            _ev(form, "patient_name") or _ev(receipt, "patient_name"),
+        )
+    )
 
     # Which clinic?
     clinic_name = (receipt.get("clinic_name") if receipt else "") or (
@@ -197,6 +240,7 @@ def assess_packet(
 
     # Line items and their categories (the one judgement call the model makes here).
     items: list[LineItem] = []
+    item_evidence: list[Evidence | None] = []
     if receipt:
         descriptions = [it.description for it in receipt.items if nz.amount(it.amount)]
         cats = _categories(model, descriptions)
@@ -205,6 +249,7 @@ def assess_packet(
         ):
             amt = nz.amount(it.amount)
             assert amt is not None
+            item_evidence.append((receipt.doc_id, it.box) if it.box else None)
             items.append(
                 LineItem(
                     item_id=f"L{k + 1}",
@@ -219,6 +264,7 @@ def assess_packet(
             or (nz.amount(form.get("amount")) if form else None)
             or Decimal("0.01")
         )
+        item_evidence = [None]
         items = [
             LineItem(
                 item_id="L1",
@@ -233,8 +279,14 @@ def assess_packet(
     # Cross-document checks for tampering and fraud.
     integrity: list[str] = []
 
-    def check(label: str, ok: bool, issue: IntegrityIssue | None, clause: str = "C6.1") -> None:
-        checks.append((label, ok, clause))
+    def check(
+        label: str,
+        ok: bool,
+        issue: IntegrityIssue | None,
+        evidence: list[Evidence],
+        clause: str = "C6.1",
+    ) -> None:
+        checks.append(Check(label, ok, clause, evidence))
         if not ok and issue:
             integrity.append(issue.value)
 
@@ -246,14 +298,22 @@ def assess_packet(
                 "Receipt items add up to the total",
                 printed_total == item_sum,
                 IntegrityIssue.AMOUNT_ALTERED,
+                _ev(receipt, "total") + [e for e in item_evidence if e],
             )
-        check("Clinic is in the registry", clinic is not None, IntegrityIssue.UNKNOWN_CLINIC)
+        check(
+            "Clinic is in the registry",
+            clinic is not None,
+            IntegrityIssue.UNKNOWN_CLINIC,
+            _ev(receipt, "clinic_name"),
+            "C4.1",
+        )
         receipt_no = nz.code_key(receipt.get("receipt_no"))
         if clinic is not None and receipt_no:
             check(
                 "Receipt number matches the clinic's format",
                 receipt_no.startswith(nz.code_key(clinic["receipt_number_prefix"]) + "-"),
                 IntegrityIssue.RECEIPT_NUMBER_ANOMALY,
+                _ev(receipt, "receipt_no"),
             )
         seen = {
             nz.code_key(h["receipt_no"])
@@ -261,31 +321,36 @@ def assess_packet(
             if h["member_id"] == member.member_id
         }
         check(
-            "Receipt not claimed before", receipt_no not in seen, IntegrityIssue.DUPLICATE_RECEIPT
+            "Receipt not claimed before",
+            receipt_no not in seen,
+            IntegrityIssue.DUPLICATE_RECEIPT,
+            _ev(receipt, "receipt_no"),
         )
         if form:
             check(
                 "Same patient on receipt and claim form",
                 nz.same_name(receipt.get("patient_name"), form.get("patient_name")),
                 IntegrityIssue.NAME_MISMATCH,
+                _ev(receipt, "patient_name") + _ev(form, "patient_name"),
             )
         if mc:
             check(
                 "Receipt and MC dates match",
                 nz.day(receipt.get("date")) == nz.day(mc.get("date")),
                 IntegrityIssue.DATE_ALTERED,
+                _ev(receipt, "date") + _ev(mc, "date"),
             )
             mc_clinic = registry.clinic_by_name(mc.get("clinic_name"))
             check(
                 "MC is from the same clinic",
                 mc_clinic is None or clinic is None or mc_clinic["clinic_id"] == clinic_id,
                 IntegrityIssue.CLINIC_MISMATCH,
+                _ev(mc, "clinic_name") + _ev(receipt, "clinic_name"),
             )
 
     # Instructions hidden in documents are flagged, never followed.
-    injection = [
-        f"{d.doc_id}: {ln.text}" for d in docs for ln in d.lines if INJECTION.search(ln.text)
-    ]
+    hits = [(d.doc_id, ln) for d in docs for ln in d.lines if INJECTION.search(ln.text)]
+    injection = [f"{doc_id}: {ln.text}" for doc_id, ln in hits]
 
     in_year = [
         h
@@ -336,6 +401,11 @@ def assess_packet(
         checks,
         confidence,
         time.time() - start,
+        facts=facts,
+        member=record,
+        submitted_on=manifest["submitted_on"],
+        item_evidence=item_evidence,
+        injection_evidence=[(doc_id, ln.box) for doc_id, ln in hits],
     )
 
 

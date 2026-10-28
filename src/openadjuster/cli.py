@@ -20,7 +20,32 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--model", default=DEFAULT_MODEL)
     run.add_argument("--subset", choices=["all", "smoke"], default="all")
     run.add_argument("--use-image", action="store_true", help="also send page images")
+
+    exp = sub.add_parser("export", help="assess packets and write case records for the console")
+    exp.add_argument("--split-dir", type=Path, required=True)
+    exp.add_argument("--out", type=Path, required=True)
+    exp.add_argument("--model", default=DEFAULT_MODEL)
+    exp.add_argument("--packets", nargs="+", required=True)
+    exp.add_argument(
+        "--with-benchmark",
+        action="store_true",
+        help="include the benchmark's expected answer (for the public demo)",
+    )
+
+    srv = sub.add_parser("serve", help="run the review console locally")
+    srv.add_argument("--cases", type=Path, default=Path("cases"))
+    srv.add_argument("--split-dir", type=Path, help="ClaimDocBench split to assess packets from")
+    srv.add_argument("--model", default=DEFAULT_MODEL)
+    srv.add_argument("--port", type=int, default=8000)
     args = parser.parse_args(argv)
+
+    if args.command == "export":
+        return _export(args)
+    if args.command == "serve":
+        from openadjuster.server import serve
+
+        serve(args.cases, args.split_dir, args.model, args.port)
+        return 0
 
     index = json.loads((args.split_dir / "index.json").read_text(encoding="utf-8"))
     ids = index["smoke"] if args.subset == "smoke" else [*index["packets"], *index.get("twins", [])]
@@ -51,6 +76,23 @@ def main(argv: list[str] | None = None) -> int:
             f"{pred.get('latency_s')}s",
             flush=True,
         )
+    return 0
+
+
+def _export(args: argparse.Namespace) -> int:
+    from openadjuster.case import build_case, write_case, write_index
+
+    registry = Registry.load(args.split_dir / "context")
+    model = LocalModel(args.model)
+    for pid in args.packets:
+        pdir = args.split_dir / "packets" / pid
+        gold = None
+        if args.with_benchmark:
+            gold = json.loads((args.split_dir / "gold" / f"{pid}.json").read_text("utf-8"))
+        case = build_case(assess_packet(pdir, registry, model), pdir, model.model, gold)
+        write_case(case, pdir, args.out)
+        print(f"{pid} {case['decision']['decision']} {case['decision']['payable']}", flush=True)
+    write_index(args.out)
     return 0
 
 
