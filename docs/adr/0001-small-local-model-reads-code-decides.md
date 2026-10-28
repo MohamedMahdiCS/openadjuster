@@ -14,6 +14,7 @@ model returns the decision) on the 25-packet `smoke` subset of ClaimDocBench `de
 | `bonsai-2:4b` (1.6 GB) | page images | 16% | 0% | 94% | 23 s |
 | `bonsai-2:4b` | OCR text | 0% | 0% | 91% | 24 s |
 | `bonsai-2:2b` (0.9 GB) | page images | 0% | 0% | 63% | 10 s |
+| `bonsai-2:2b` | OCR text | 0% | 0% | 66% | 8 s |
 
 The 4B model reads documents well but can't be trusted to apply the policy or spot fraud: it
 approved almost everything. `lfm3-vl:2b` was a candidate but needs a newer Ollama than Homebrew ships.
