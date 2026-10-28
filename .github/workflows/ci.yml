@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    # The claimdocbench dependency is checked out from GitHub, which only works once it is public.
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: openadjuster
+      - uses: actions/checkout@v4
+        with:
+          repository: MohamedMahdiCS/claimdocbench
+          path: claimdocbench
+      - uses: astral-sh/setup-uv@v6
+      - name: Install
+        working-directory: openadjuster
+        run: uv sync --locked
+      - name: Lint
+        working-directory: openadjuster
+        run: uv run ruff check . && uv run ruff format --check .
+      - name: Types
+        working-directory: openadjuster
+        run: uv run mypy
+      - name: Tests
+        working-directory: openadjuster
+        run: uv run pytest
+      - name: No paid-provider keys in the repo
+        working-directory: openadjuster
+        run: |
+          if git grep -nE '(sk-ant-[A-Za-z0-9]|sk-proj-[A-Za-z0-9]|AIza[0-9A-Za-z_-]{20})' -- . ':!.github/workflows/ci.yml'; then
+            echo "Found what looks like an API key. This project runs at \$0 with local models only."; exit 1
+          fi
