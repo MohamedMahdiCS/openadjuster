@@ -36,7 +36,7 @@ def main(argv: list[str] | None = None) -> int:
     srv.add_argument("--cases", type=Path, default=Path("cases"))
     srv.add_argument("--split-dir", type=Path, help="ClaimDocBench split to assess packets from")
     srv.add_argument("--model", default=DEFAULT_MODEL)
-    srv.add_argument("--port", type=int, default=8000)
+    srv.add_argument("--port", type=int, default=8077)
     args = parser.parse_args(argv)
 
     if args.command == "export":

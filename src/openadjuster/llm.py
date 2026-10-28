@@ -36,7 +36,9 @@ class LocalModel:
             "stream": False,
             "think": False,
             "format": schema,
-            "options": {"temperature": 0, "num_ctx": 8192},
+            # Same context size as the benchmark baselines, so Ollama never reloads the model
+            # between them; num_predict caps runaway answers.
+            "options": {"temperature": 0, "num_ctx": 16384, "num_predict": 1200},
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user, "images": images or []},
