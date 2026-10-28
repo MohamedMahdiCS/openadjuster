@@ -6,6 +6,7 @@ Returns each recognised line with its pixel box in the image, top-left origin, i
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -21,11 +22,26 @@ class Line:
     box: Box
 
 
-def read_lines(path: Path) -> list[Line]:
+CJK = re.compile(r"[\u4e00-\u9fff]")
+
+
+def _recognize(path: Path, languages: list[str]) -> list[tuple[str, float, tuple[float, ...]]]:
     from ocrmac import ocrmac  # macOS only
 
+    result: list[tuple[str, float, tuple[float, ...]]] = ocrmac.OCR(
+        str(path), language_preference=languages
+    ).recognize()
+    return result
+
+
+def read_lines(path: Path) -> list[Line]:
     width, height = Image.open(path).size
-    raw = ocrmac.OCR(str(path), language_preference=["en-US", "zh-Hans"]).recognize()
+    # English-first reads English and Malay best but turns Chinese into junk; Chinese-first is
+    # the reverse. Run both and keep the Chinese pass only if it found real Chinese text.
+    raw = _recognize(path, ["en-US", "zh-Hans"])
+    raw_zh = _recognize(path, ["zh-Hans", "en-US"])
+    if len(CJK.findall("".join(r[0] for r in raw_zh))) >= 8:
+        raw = raw_zh
     lines = []
     for text, conf, (nx, ny, nw, nh) in raw:
         # Vision boxes are normalised with the origin at the bottom-left.
