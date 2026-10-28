@@ -9,6 +9,8 @@ authors = [{ name = "Mohamed Mahdi" }]
 requires-python = ">=3.12"
 dependencies = [
     "claimdocbench",
+    "ocrmac>=1.0; sys_platform == 'darwin'",
+    "pillow>=11,<13",
     "pydantic>=2.9,<3",
 ]
 
@@ -46,6 +48,10 @@ python_version = "3.12"
 strict = true
 plugins = ["pydantic.mypy"]
 files = ["src", "tests"]
+
+[[tool.mypy.overrides]]
+module = ["ocrmac.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
