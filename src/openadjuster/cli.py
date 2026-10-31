@@ -32,6 +32,11 @@ def main(argv: list[str] | None = None) -> int:
         help="include the benchmark's expected answer (for the public demo)",
     )
 
+    rep = sub.add_parser("replay", help="re-run a stored case and report any difference")
+    rep.add_argument("--split-dir", type=Path, required=True)
+    rep.add_argument("--cases", type=Path, default=Path("cases"))
+    rep.add_argument("--packet", required=True)
+
     srv = sub.add_parser("serve", help="run the review console locally")
     srv.add_argument("--cases", type=Path, default=Path("cases"))
     srv.add_argument("--split-dir", type=Path, help="ClaimDocBench split to assess packets from")
@@ -48,6 +53,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "export":
         return _export(args)
+    if args.command == "replay":
+        return _replay(args)
     if args.command == "serve":
         from openadjuster.server import serve
 
@@ -98,6 +105,18 @@ def main(argv: list[str] | None = None) -> int:
             flush=True,
         )
     return 0
+
+
+def _replay(args: argparse.Namespace) -> int:
+    from openadjuster.case import build_case, replay_diff
+
+    stored = json.loads((args.cases / args.packet / "case.json").read_text("utf-8"))
+    pdir = args.split_dir / "packets" / args.packet
+    registry = Registry.load(args.split_dir / "context")
+    model = LocalModel(stored["run"]["model"])
+    diffs = replay_diff(stored, build_case(assess_packet(pdir, registry, model), pdir, model.model))
+    print("\n".join(diffs) if diffs else f"{args.packet}: replay matches")
+    return 1 if diffs else 0
 
 
 def _export(args: argparse.Namespace) -> int:

@@ -1,9 +1,10 @@
 from datetime import date
 from decimal import Decimal
+from typing import Any
 
 from openadjuster import normalize as nz
-from openadjuster.assess import _items_add_up
-from openadjuster.case import versions
+from openadjuster.assess import _calibrate, _items_add_up
+from openadjuster.case import _route, replay_diff, versions
 from openadjuster.classify import classify
 from openadjuster.ocr import Line
 from openadjuster.receipt import parse
@@ -88,3 +89,28 @@ def test_document_types_in_three_languages() -> None:
     assert classify([_line("SIJIL CUTI SAKIT", 0, 0)]) == "medical_certificate"
     assert classify([_line("正式收据", 0, 0)]) == "receipt"
     assert classify([_line("nothing readable", 0, 0)]) == "unknown"
+
+
+def test_replay_reports_changed_decisions_and_versions() -> None:
+    versions_a = {"model": "a", "prompt": "p", "policy": "x", "pipeline": "y"}
+    stored: dict[str, Any] = {
+        "decision": {"decision": "PARTIAL", "payable": "72.00", "route": "r"},
+        "run": {"versions": versions_a},
+    }
+    assert replay_diff(stored, stored) == []
+    fresh: dict[str, Any] = {
+        "decision": {"decision": "ESCALATE", "payable": "0.00", "route": "r"},
+        "run": {"versions": {**versions_a, "pipeline": "z"}},
+    }
+    assert replay_diff(stored, fresh) == [
+        "decision.decision: PARTIAL -> ESCALATE",
+        "decision.payable: 72.00 -> 0.00",
+        "version.pipeline: y -> z",
+    ]
+
+
+def test_low_confidence_recommendations_get_closer_review() -> None:
+    assert [_calibrate(r) for r in (0.95, 0.85, 0.6)] == [0.98, 0.84, 0.15]
+    assert _route("APPROVE", 0.98) == "Ready for approval"
+    assert _route("APPROVE", 0.84) == "Check closely before approving"
+    assert _route("ESCALATE", 0.15) == "Send to fraud review"

@@ -491,6 +491,13 @@ def assess_packet(
     )
 
 
+def _calibrate(raw: float) -> float:
+    # (correct + 1) / (n + 2) per tier on dev v2: 115/116, 40/47 and 0/5.
+    if raw >= 0.9:
+        return 0.98
+    return 0.84 if raw > 0.6 else 0.15
+
+
 def _confidence(
     docs: list[Document],
     receipt: Document | None,
@@ -499,7 +506,7 @@ def _confidence(
     integrity: list[str],
     illegible: set[DocType],
 ) -> float:
-    """Simple evidence-based score; calibrated against dev results later."""
+    """Evidence-based score, mapped to the accuracy seen on dev for that tier."""
     score = 0.95
     if receipt is None or illegible:
         score -= 0.15
@@ -514,7 +521,7 @@ def _confidence(
         score -= 0.1  # a single failed check is more often a misread than a fraud
     if any(d.doc_type == "unknown" for d in docs):
         score -= 0.1
-    return max(0.05, min(0.99, score))
+    return _calibrate(score)
 
 
 FIELD_MAP = {

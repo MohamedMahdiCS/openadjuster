@@ -50,6 +50,7 @@ LABELS = {
     "unknown": "Unreadable page",
 }
 
+CLOSE_REVIEW_BELOW = 0.9
 ROUTE = {
     "APPROVE": "Ready for approval",
     "PARTIAL": "Ready for approval",
@@ -137,7 +138,7 @@ def build_case(
             "payable": str(adj.payable_amount) if adj else "0.00",
             "claimed": str(adj.claimed_amount) if adj else "0.00",
             "currency": adj.currency.value if adj else record.get("currency", ""),
-            "route": ROUTE.get(adj.decision.value if adj else "REQUEST_INFO", ""),
+            "route": _route(adj.decision.value if adj else "REQUEST_INFO", a.confidence),
             "confidence": round(a.confidence, 2),
             "reasons": reasons,
         },
@@ -207,3 +208,22 @@ def write_index(out_dir: Path) -> Path:
     index: Path = out_dir / "index.json"
     index.write_text(json.dumps(rows, indent=2, ensure_ascii=False), encoding="utf-8")
     return index
+
+
+def _route(decision: str, confidence: float) -> str:
+    route = ROUTE.get(decision, "")
+    if route == "Ready for approval" and confidence < CLOSE_REVIEW_BELOW:
+        return "Check closely before approving"
+    return route
+
+
+def replay_diff(stored: dict[str, Any], fresh: dict[str, Any]) -> list[str]:
+    """What changed between a recorded decision and a re-run of it. Empty means identical."""
+    diffs = [
+        f"decision.{k}: {stored['decision'][k]} -> {fresh['decision'][k]}"
+        for k in ("decision", "payable", "route")
+        if stored["decision"][k] != fresh["decision"][k]
+    ]
+    old, new = stored["run"].get("versions", {}), fresh["run"]["versions"]
+    diffs += [f"version.{k}: {old.get(k)} -> {new[k]}" for k in new if old.get(k) != new[k]]
+    return diffs
