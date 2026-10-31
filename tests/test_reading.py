@@ -2,6 +2,7 @@ from datetime import date
 from decimal import Decimal
 
 from openadjuster import normalize as nz
+from openadjuster.assess import _items_add_up
 from openadjuster.classify import classify
 from openadjuster.ocr import Line
 from openadjuster.receipt import parse
@@ -66,6 +67,12 @@ def test_addresses_are_not_prices() -> None:
         _line("S$ 45.00", 600, 140, 90),
     ]
     assert [i.amount for i in parse(lines).items] == ["S$ 45.00"]
+
+
+def test_inflated_total_does_not_add_up() -> None:
+    assert not _items_add_up(Decimal("179.97"), Decimal("108.97"), [])
+    assert _items_add_up(Decimal("108.97"), Decimal("108.97"), [])
+    assert _items_add_up(Decimal("60.50"), Decimal("35.50"), [Decimal("25.00")])
 
 
 def test_document_types_in_three_languages() -> None:

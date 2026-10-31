@@ -143,6 +143,11 @@ class Assessment:
     injection_evidence: list[Evidence] = field(default_factory=list)
 
 
+def _items_add_up(printed_total: Decimal, item_sum: Decimal, unpaired: list[Decimal]) -> bool:
+    # Never trust the claim form here: a forger who inflates the total inflates the form too.
+    return printed_total in (item_sum, item_sum + sum(unpaired, Decimal("0")))
+
+
 def _ev(doc: Document | None, *names: str) -> list[Evidence]:
     if doc is None:
         return []
@@ -362,23 +367,15 @@ def assess_packet(
 
     if receipt and DocType.RECEIPT not in illegible:
         printed_total = nz.amount(receipt.get("total"))
-        form_amount = nz.amount(form.get("amount")) if form else None
         item_sum = sum((i.amount for i in items), Decimal("0"))
         if printed_total is not None:
-            adds_up = printed_total == item_sum
-            if not adds_up:
-                parsed = parse_receipt(receipt.lines)
-                extra = sum(
-                    (nz.amount(u.amount) or Decimal("0") for u in parsed.unpaired_prices),
-                    Decimal("0"),
-                )
-                if extra and printed_total == item_sum + extra:
-                    adds_up = True
-            if not adds_up and form_amount is not None and printed_total == form_amount:
-                adds_up = True
+            unpaired = [
+                nz.amount(u.amount) or Decimal("0")
+                for u in parse_receipt(receipt.lines).unpaired_prices
+            ]
             check(
                 "Receipt items add up to the total",
-                adds_up,
+                _items_add_up(printed_total, item_sum, unpaired),
                 IntegrityIssue.AMOUNT_ALTERED,
                 _ev(receipt, "total") + [e for e in item_evidence if e],
             )
