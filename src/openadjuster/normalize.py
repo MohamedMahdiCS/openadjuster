@@ -91,4 +91,6 @@ def similar_name(a: str | None, b: str | None, threshold: float = 0.8) -> float:
         return 0.0
     if ka == kb:
         return 1.0
+    if ka in kb or kb in ka:
+        return 0.9
     return difflib.SequenceMatcher(None, ka, kb).ratio()

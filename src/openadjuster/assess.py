@@ -362,10 +362,10 @@ def assess_packet(
 
     if receipt and DocType.RECEIPT not in illegible:
         printed_total = nz.amount(receipt.get("total"))
+        form_amount = nz.amount(form.get("amount")) if form else None
         item_sum = sum((i.amount for i in items), Decimal("0"))
         if printed_total is not None:
             adds_up = printed_total == item_sum
-            # If the parser missed items, check whether unpaired prices close the gap.
             if not adds_up:
                 parsed = parse_receipt(receipt.lines)
                 extra = sum(
@@ -374,6 +374,8 @@ def assess_packet(
                 )
                 if extra and printed_total == item_sum + extra:
                     adds_up = True
+            if not adds_up and form_amount is not None and printed_total == form_amount:
+                adds_up = True
             check(
                 "Receipt items add up to the total",
                 adds_up,
@@ -406,10 +408,8 @@ def assess_packet(
             IntegrityIssue.DUPLICATE_RECEIPT,
             _ev(receipt, "receipt_no"),
         )
-        if form:
+        if form and nz.name(receipt.get("patient_name")):
             name_sim = nz.similar_name(receipt.get("patient_name"), form.get("patient_name"))
-            # Also accept if the form patient is actually the member name and the receipt
-            # names the real patient (the model confused the rows).
             if name_sim < 0.8 and form_member:
                 name_sim = max(name_sim, nz.similar_name(receipt_patient, form_member))
             check(

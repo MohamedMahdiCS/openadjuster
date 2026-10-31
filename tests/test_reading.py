@@ -25,6 +25,9 @@ def test_names_and_codes_ignore_ocr_noise() -> None:
     assert nz.same_name("Chan Méi Ling", "chan mei  ling")
     assert not nz.same_name("Lim Xin Yi", "Priya a/p Gopal")
     assert nz.code_key("No. 0C7-2609292") == nz.code_key("OC7-2609292")
+    assert nz.similar_name("Kavitha", "Kavitha a/p Gopal") >= 0.8
+    assert nz.similar_name("Ahmad bin Ali", "Ahmad") >= 0.8
+    assert nz.similar_name("Lim", "Chen Wei") < 0.8
 
 
 def _line(text: str, x: int, y: int, w: int = 200, h: int = 24) -> Line:

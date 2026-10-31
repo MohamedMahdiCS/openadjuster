@@ -37,6 +37,13 @@ def main(argv: list[str] | None = None) -> int:
     srv.add_argument("--split-dir", type=Path, help="ClaimDocBench split to assess packets from")
     srv.add_argument("--model", default=DEFAULT_MODEL)
     srv.add_argument("--port", type=int, default=8077)
+
+    mcp = sub.add_parser("mcp-serve", help="run the MCP tool server")
+    mcp.add_argument("--split-dir", type=Path, required=True)
+    mcp.add_argument("--cases", type=Path, default=Path("cases"))
+    mcp.add_argument("--model", default=DEFAULT_MODEL)
+    mcp.add_argument("--transport", choices=["stdio", "sse"], default="stdio")
+    mcp.add_argument("--port", type=int, default=8078)
     args = parser.parse_args(argv)
 
     if args.command == "export":
@@ -45,6 +52,20 @@ def main(argv: list[str] | None = None) -> int:
         from openadjuster.server import serve
 
         serve(args.cases, args.split_dir, args.model, args.port)
+        return 0
+    if args.command == "mcp-serve":
+        from openadjuster.mcp_server import configure
+        from openadjuster.mcp_server import mcp as mcp_app
+
+        configure(args.split_dir, args.cases, args.model)
+        if args.transport == "sse":
+            import uvicorn
+
+            uvicorn.run(mcp_app.sse_app(), host="127.0.0.1", port=args.port)
+        else:
+            import asyncio
+
+            asyncio.run(mcp_app.run_stdio_async())
         return 0
 
     index = json.loads((args.split_dir / "index.json").read_text(encoding="utf-8"))
