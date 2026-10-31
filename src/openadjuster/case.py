@@ -5,9 +5,11 @@ The same record feeds the live local console and the static demo on GitHub Pages
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 from datetime import UTC, datetime
+from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +19,28 @@ from PIL import Image
 
 from openadjuster import __version__
 from openadjuster.assess import Assessment
+from openadjuster.extract import HINTS, SYSTEM
+from openadjuster.llm import model_digest
+
+
+def _sha(*parts: bytes) -> str:
+    h = hashlib.sha256()
+    for part in parts:
+        h.update(part)
+    return h.hexdigest()[:16]
+
+
+def versions(model: str) -> dict[str, str | None]:
+    """Fingerprints of everything a decision depends on, so a replay can prove it matches."""
+    policy = files("claimdocbench").joinpath("data/policy.yaml").read_bytes()
+    source = sorted(Path(__file__).parent.glob("*.py"))
+    return {
+        "model": model_digest(model),
+        "prompt": _sha(SYSTEM.encode(), json.dumps(HINTS, sort_keys=True, default=str).encode()),
+        "policy": _sha(policy),
+        "pipeline": _sha(*(p.read_bytes() for p in source)),
+    }
+
 
 LABELS = {
     "claim_form": "Claim form",
@@ -137,6 +161,7 @@ def build_case(
             "seconds": round(a.seconds, 1),
             "cost_usd": 0.0,
             "version": __version__,
+            "versions": versions(model),
             "assessed_at": datetime.now(UTC).isoformat(timespec="seconds"),
         },
         "review": None,

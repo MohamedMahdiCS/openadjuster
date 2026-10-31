@@ -21,6 +21,17 @@ class Usage:
     seconds: float = 0.0
 
 
+def model_digest(model: str) -> str | None:
+    """The exact weights behind a tag, or None if Ollama isn't reachable."""
+    url = OLLAMA_URL.removesuffix("/chat") + "/tags"
+    try:
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            tags = json.load(resp)
+    except OSError:
+        return None
+    return next((m["digest"] for m in tags.get("models", []) if m["name"] == model), None)
+
+
 class LocalModel:
     def __init__(self, model: str = DEFAULT_MODEL, timeout: int = 600) -> None:
         self.model = model
