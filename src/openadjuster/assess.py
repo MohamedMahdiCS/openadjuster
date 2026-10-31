@@ -37,6 +37,7 @@ from openadjuster import normalize as nz
 from openadjuster.extract import Document, read_document
 from openadjuster.llm import LocalModel
 from openadjuster.ocr import Box
+from openadjuster.receipt import parse as parse_receipt
 
 INJECTION = re.compile(
     r"(ignore (all |any )?(previous|prior|the) (rules|instructions)|disregard|system instruction|"
@@ -49,6 +50,46 @@ CATEGORY_SYSTEM = """You sort clinic receipt line items into insurance categorie
 Categories: consultation, medication, procedure, lab_test, supplement, cosmetic, fertility,
 dental, health_screening. Vitamins, fish oil, tonics and herbal products are supplement.
 Items may be in English, Malay or Chinese. Return one category per item, in order."""
+
+KEYWORD_CATEGORIES: list[tuple[re.Pattern[str], ItemCategory]] = [
+    (
+        re.compile(
+            r"vitamin|multivitamin|fish\s*oil|minyak\s*ikan|tonic|tonik|herbal|herba"
+            r"|维生素|鱼油|补品|草本",
+            re.I,
+        ),
+        ItemCategory.SUPPLEMENT,
+    ),
+    (
+        re.compile(
+            r"laser|whitening|pemutih|peel|kupasan|acne|jerawat|美白|激光|换肤|祛痘",
+            re.I,
+        ),
+        ItemCategory.COSMETIC,
+    ),
+    (
+        re.compile(
+            r"fertility|kesuburan|ovulation|ovulasi|生育|排卵",
+            re.I,
+        ),
+        ItemCategory.FERTILITY,
+    ),
+    (
+        re.compile(
+            r"\bdental\b|\btooth\b|\bgigi\b|\bscaling\b|\bfilling\b|\btampalan\b|牙",
+            re.I,
+        ),
+        ItemCategory.DENTAL,
+    ),
+    (
+        re.compile(
+            r"screening|saringan|check-?up|pemeriksaan\s*kesihatan|体检|健康检查",
+            re.I,
+        ),
+        ItemCategory.HEALTH_SCREENING,
+    ),
+    (re.compile(r"\bconsult", re.I), ItemCategory.CONSULTATION),
+]
 
 
 @dataclass
@@ -133,26 +174,39 @@ def _member(record: dict[str, Any]) -> Member:
     )
 
 
+def _keyword_category(desc: str) -> ItemCategory | None:
+    for pattern, cat in KEYWORD_CATEGORIES:
+        if pattern.search(desc):
+            return cat
+    return None
+
+
 def _categories(model: LocalModel, descriptions: list[str]) -> list[ItemCategory]:
     if not descriptions:
         return []
-    schema = {
-        "type": "object",
-        "properties": {
-            "categories": {
-                "type": "array",
-                "items": {"type": "string", "enum": [c.value for c in ItemCategory]},
-            }
-        },
-        "required": ["categories"],
-    }
-    listing = "\n".join(f"{i + 1}. {d}" for i, d in enumerate(descriptions))
-    out = model.json(CATEGORY_SYSTEM, listing, schema).get("categories", [])
-    cats = [
-        ItemCategory(c) if c in ItemCategory._value2member_map_ else ItemCategory.MEDICATION
-        for c in out
+    result: list[ItemCategory | None] = [_keyword_category(d) for d in descriptions]
+    need_model = [
+        (i, d) for i, (d, c) in enumerate(zip(descriptions, result, strict=True)) if c is None
     ]
-    return (cats + [ItemCategory.MEDICATION] * len(descriptions))[: len(descriptions)]
+    if need_model:
+        schema = {
+            "type": "object",
+            "properties": {
+                "categories": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": [c.value for c in ItemCategory]},
+                }
+            },
+            "required": ["categories"],
+        }
+        listing = "\n".join(f"{j + 1}. {d}" for j, (_, d) in enumerate(need_model))
+        out = model.json(CATEGORY_SYSTEM, listing, schema).get("categories", [])
+        for k, (idx, _) in enumerate(need_model):
+            c = out[k] if k < len(out) else "medication"
+            result[idx] = (
+                ItemCategory(c) if c in ItemCategory._value2member_map_ else ItemCategory.MEDICATION
+            )
+    return [c or ItemCategory.MEDICATION for c in result]
 
 
 def assess_packet(
@@ -195,11 +249,27 @@ def assess_packet(
         present.add(DocType.RECEIPT)
         illegible.add(DocType.RECEIPT)
 
-    # Who is the patient?
-    patient_name = (
-        form.get("patient_name") if form else (receipt.get("patient_name") if receipt else "")
-    )
-    person = next((p for p in member.persons if nz.same_name(p.full_name, patient_name)), None)
+    # Who is the patient? The model sometimes copies the member row instead of the patient row.
+    form_patient = form.get("patient_name") if form else ""
+    form_member = form.get("member_name") if form else ""
+    receipt_patient = receipt.get("patient_name") if receipt else ""
+    patient_name = form_patient or receipt_patient
+
+    def _best_person(name_str: str) -> tuple[CoveredPerson | None, float]:
+        best, best_score = None, 0.0
+        for p in member.persons:
+            s = nz.similar_name(p.full_name, name_str)
+            if s > best_score:
+                best, best_score = p, s
+        return (best, best_score) if best_score >= 0.8 else (None, best_score)
+
+    person, _score = _best_person(patient_name)
+    # Rescue: if form patient matches the member name but the receipt names a different covered
+    # person, the model likely read the wrong row.
+    if person is None and form_member and nz.similar_name(form_patient, form_member) >= 0.8:
+        alt, _alt_score = _best_person(receipt_patient)
+        if alt is not None:
+            person, patient_name = alt, receipt_patient
     person_id = person.person_id if person else "NOT-LISTED"
     checks.append(
         Check(
@@ -294,9 +364,19 @@ def assess_packet(
         printed_total = nz.amount(receipt.get("total"))
         item_sum = sum((i.amount for i in items), Decimal("0"))
         if printed_total is not None:
+            adds_up = printed_total == item_sum
+            # If the parser missed items, check whether unpaired prices close the gap.
+            if not adds_up:
+                parsed = parse_receipt(receipt.lines)
+                extra = sum(
+                    (nz.amount(u.amount) or Decimal("0") for u in parsed.unpaired_prices),
+                    Decimal("0"),
+                )
+                if extra and printed_total == item_sum + extra:
+                    adds_up = True
             check(
                 "Receipt items add up to the total",
-                printed_total == item_sum,
+                adds_up,
                 IntegrityIssue.AMOUNT_ALTERED,
                 _ev(receipt, "total") + [e for e in item_evidence if e],
             )
@@ -327,9 +407,14 @@ def assess_packet(
             _ev(receipt, "receipt_no"),
         )
         if form:
+            name_sim = nz.similar_name(receipt.get("patient_name"), form.get("patient_name"))
+            # Also accept if the form patient is actually the member name and the receipt
+            # names the real patient (the model confused the rows).
+            if name_sim < 0.8 and form_member:
+                name_sim = max(name_sim, nz.similar_name(receipt_patient, form_member))
             check(
                 "Same patient on receipt and claim form",
-                nz.same_name(receipt.get("patient_name"), form.get("patient_name")),
+                name_sim >= 0.8,
                 IntegrityIssue.NAME_MISMATCH,
                 _ev(receipt, "patient_name") + _ev(form, "patient_name"),
             )

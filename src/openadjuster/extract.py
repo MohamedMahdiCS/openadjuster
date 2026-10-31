@@ -25,6 +25,7 @@ FIELDS: dict[str, list[str]] = {
     "receipt": ["clinic_name", "registration_no", "receipt_no", "date", "patient_name"],
     "claim_form": [
         "member_id",
+        "member_name",
         "patient_name",
         "relationship",
         "clinic_name",
@@ -42,7 +43,9 @@ FIELDS: dict[str, list[str]] = {
 
 HINTS = {
     "receipt": "clinic_name is the clinic at the top. receipt_no is the receipt or invoice number.",
-    "claim_form": "visit_type is GP or SPECIALIST. referred is Yes, No or N/A. "
+    "claim_form": "member_name is the policy holder (labelled Member name / Nama ahli / 会员姓名). "
+    "patient_name is the person treated (labelled Patient name / Nama pesakit / 病人姓名) and "
+    "may differ from the member. visit_type is GP or SPECIALIST. referred is Yes, No or N/A. "
     "diagnosis includes the code. remarks is the free text in the remarks box.",
     "medical_certificate": "days is the number of days of sick leave.",
     "referral_letter": "from_clinic is the letterhead clinic; to_clinic is the addressee.",

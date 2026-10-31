@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import difflib
 import re
 import unicodedata
 from datetime import date
@@ -74,10 +75,20 @@ def code_key(text: str) -> str:
     return text.replace(" ", "").upper().removeprefix("NO.").translate(CONFUSABLE)
 
 
+def _name_key(x: str | None) -> str:
+    return re.sub(r"[^a-z0-9一-鿿]", "", name(x))
+
+
 def same_name(a: str | None, b: str | None) -> bool:
     """Names match if they're equal after tidying, ignoring OCR noise in punctuation."""
+    return bool(_name_key(a)) and _name_key(a) == _name_key(b)
 
-    def key(x: str | None) -> str:
-        return re.sub(r"[^a-z0-9一-鿿]", "", name(x))
 
-    return bool(key(a)) and key(a) == key(b)
+def similar_name(a: str | None, b: str | None, threshold: float = 0.8) -> float:
+    """Similarity ratio between two names, 0.0 to 1.0. Handles OCR typos in handwriting."""
+    ka, kb = _name_key(a), _name_key(b)
+    if not ka or not kb:
+        return 0.0
+    if ka == kb:
+        return 1.0
+    return difflib.SequenceMatcher(None, ka, kb).ratio()

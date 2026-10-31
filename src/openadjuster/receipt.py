@@ -9,7 +9,7 @@ group text into rows, and read every row above the total that ends in a price.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from openadjuster.ocr import Box, Line
 
@@ -42,6 +42,7 @@ class ParsedReceipt:
     items: list[ParsedItem]
     total: str
     total_box: Box | None
+    unpaired_prices: list[ParsedItem] = field(default_factory=list)
 
 
 def _mid(ln: Line) -> tuple[float, float]:
@@ -126,6 +127,7 @@ def parse(lines: list[Line]) -> ParsedReceipt:
         for d, p in zip(descs, item_prices, strict=True):
             items.append(ParsedItem(clean(d.text), MONEY.findall(p.text)[-1], p.box))
         return ParsedReceipt(items, total, total_box)
+    unpaired: list[ParsedItem] = []
     for price in item_prices:
         own = MONEY.sub("", price.text).strip(" |:-")
         near = min(descs, key=lambda t: abs(_level(t, slope) - _level(price, slope)), default=None)
@@ -134,7 +136,10 @@ def parse(lines: list[Line]) -> ParsedReceipt:
         elif near and abs(_level(near, slope) - _level(price, slope)) < 1.0 * price.box[3]:
             desc = near.text
         else:
+            unpaired.append(ParsedItem("?", MONEY.findall(price.text)[-1], price.box))
             continue
         if not NOT_ITEM.search(desc) and clean(desc):
             items.append(ParsedItem(clean(desc), MONEY.findall(price.text)[-1], price.box))
-    return ParsedReceipt(items, total, total_box)
+        else:
+            unpaired.append(ParsedItem(desc or "?", MONEY.findall(price.text)[-1], price.box))
+    return ParsedReceipt(items, total, total_box, unpaired)
