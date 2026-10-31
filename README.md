@@ -12,8 +12,39 @@ costs nothing per claim.
 ![Review screen: a forged receipt with the wrong patient name is sent to fraud review](docs/images/review-fraud.png)
 
 <!-- RESULTS:START -->
-Results on [ClaimDocBench](https://github.com/MohamedMahdiCS/claimdocbench) are added after the
-evaluation runs finish.
+**[Try the demo](https://mohamedmahdics.github.io/openadjuster-demo/)**: 20 recorded claims on
+synthetic documents. It runs in the browser and nothing is saved.
+
+Results on [ClaimDocBench](https://github.com/MohamedMahdiCS/claimdocbench). I froze the system at
+commit `0a7683e` and ran `test` and the held-out split once each.
+
+| | One prompt, `bonsai-2:4b` | OpenAdjuster, `test` | OpenAdjuster, held-out |
+|---|---:|---:|---:|
+| Claims | 200 | 200 | 50 |
+| Decision and amount correct | 9.5% | 88.0% | 78.0% |
+| Fraud recall | 0% | 100% | 100% |
+| False alarms on honest claims | | 12.0% | 28.6% |
+| Injection attack success | | 0% | 0% (1 attack only) |
+| Calibration error | | 0.043 | 0.153 |
+| Median seconds per claim | | 32 | 34 |
+| Cost per claim | $0 | $0 | $0 |
+
+The held-out split uses document templates the system never saw. Reports are in
+[`docs/results`](docs/results).
+
+What these numbers don't hide:
+
+- **Two wrong payouts on `test`.** Two claims inside the waiting period were recommended for
+  payment at high confidence. A person approves every payout, which is why that step exists.
+- **Four honest claims underpaid on `test`.** These were clean claims the system marked as only
+  partly payable, also at high confidence.
+- **It can't yet decide alone.** The top confidence tier claims 98% and was right on 104 of 110
+  `test` claims (94.5%). The share of claims it could decide at 99% accuracy fell from 74.7% on dev
+  to 2.5% on `test`. Dev flattered it, so treat every result as a recommendation.
+- **New layouts hurt.** Held-out accuracy was 54.5% on BM receipts and 50% on Chinese ones, from
+  small samples. Most misses across both splits were honest claims sent to fraud review.
+- **Accuracy varies by name origin.** On `test` it ran from 77.8% (Indian names) to 91.8% (Chinese
+  names). I haven't found out why.
 <!-- RESULTS:END -->
 
 ## Why I built this
@@ -90,13 +121,19 @@ cd ../openadjuster && uv sync
 uv run openadjuster serve --split-dir ../claimdocbench/out/dev
 ```
 
-Open http://localhost:8077 and use "Assess a new claim". Each claim takes about 20 seconds.
+Open http://localhost:8077 and use "Assess a new claim". Each claim takes about 30 seconds.
 
 To score it on the benchmark:
 
 ```bash
 uv run openadjuster run --split-dir ../claimdocbench/out/dev --out preds.jsonl
 cd ../claimdocbench && uv run claimdocbench evaluate --split-dir out/dev --predictions ../openadjuster/preds.jsonl
+```
+
+Replay a stored decision and see whether anything changed:
+
+```bash
+uv run openadjuster replay --split-dir ../claimdocbench/out/dev --packet <id>
 ```
 
 ## Project layout
@@ -108,10 +145,13 @@ src/openadjuster/
   receipt.py    receipt items and total, with tilt correction
   extract.py    header fields with the model, evidence lookup
   assess.py     registry lookups, fraud checks, rules engine, confidence
-  case.py       the record the review screen shows
+  case.py       the record the review screen shows, version fingerprints, replay
+  mcp_server.py the same operations as MCP tools
   server.py     FastAPI: case files, assess, approve / override with an audit log
 console/        review screen (React + TypeScript)
 docs/adr/       design decisions
+docs/results/   scored reports behind every number here
+governance/     system card and MAS mapping
 ```
 
 ## Limitations
