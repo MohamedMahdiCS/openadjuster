@@ -1,0 +1,163 @@
+{
+  "split": "dev",
+  "subset": "all",
+  "packets": 150,
+  "predicted": 150,
+  "accuracy": 0.9333,
+  "decision_accuracy": 0.94,
+  "confusion": {
+    "APPROVE": {
+      "APPROVE": 16,
+      "PARTIAL": 0,
+      "REJECT": 0,
+      "REQUEST_INFO": 0,
+      "ESCALATE": 3,
+      "MISSING": 0
+    },
+    "PARTIAL": {
+      "APPROVE": 0,
+      "PARTIAL": 57,
+      "REJECT": 0,
+      "REQUEST_INFO": 1,
+      "ESCALATE": 4,
+      "MISSING": 0
+    },
+    "REJECT": {
+      "APPROVE": 0,
+      "PARTIAL": 0,
+      "REJECT": 24,
+      "REQUEST_INFO": 0,
+      "ESCALATE": 0,
+      "MISSING": 0
+    },
+    "REQUEST_INFO": {
+      "APPROVE": 0,
+      "PARTIAL": 0,
+      "REJECT": 0,
+      "REQUEST_INFO": 12,
+      "ESCALATE": 1,
+      "MISSING": 0
+    },
+    "ESCALATE": {
+      "APPROVE": 0,
+      "PARTIAL": 0,
+      "REJECT": 0,
+      "REQUEST_INFO": 0,
+      "ESCALATE": 32,
+      "MISSING": 0
+    }
+  },
+  "integrity": {
+    "precision": 0.8,
+    "recall": 1.0,
+    "false_positive_rate": 0.0678,
+    "recall_by_type": {
+      "amount_altered": 1.0,
+      "clinic_mismatch": 1.0,
+      "date_altered": 1.0,
+      "duplicate_receipt": 1.0,
+      "name_mismatch": 1.0,
+      "receipt_number_anomaly": 1.0,
+      "unknown_clinic": 1.0
+    }
+  },
+  "injection": {
+    "packets": 18,
+    "attack_success_rate": 0.0,
+    "paired_packets": 15,
+    "overpaid_on_injected": 0.0,
+    "detection_recall": 0.6111,
+    "detection_false_positive_rate": 0.0
+  },
+  "reasons_f1": 0.9419,
+  "extraction": {
+    "field_accuracy": 0.9215,
+    "by_field": {
+      "claim_form.amount": 0.98,
+      "claim_form.member_id": 0.9733,
+      "claim_form.patient_name": 0.8067,
+      "claim_form.visit_date": 0.9333,
+      "receipt.clinic_name": 0.9724,
+      "receipt.date": 0.9655,
+      "receipt.patient_name": 0.7931,
+      "receipt.receipt_no": 0.9517,
+      "receipt.total": 0.9172
+    },
+    "evidence_iou50": 0.8797
+  },
+  "abstention": {
+    "stp_at_99": 0.7467,
+    "ece": 0.0707,
+    "curve": [
+      {
+        "coverage": 0.1,
+        "accuracy": 1.0
+      },
+      {
+        "coverage": 0.2,
+        "accuracy": 1.0
+      },
+      {
+        "coverage": 0.3,
+        "accuracy": 0.9778
+      },
+      {
+        "coverage": 0.4,
+        "accuracy": 0.9833
+      },
+      {
+        "coverage": 0.5,
+        "accuracy": 0.9867
+      },
+      {
+        "coverage": 0.6,
+        "accuracy": 0.9889
+      },
+      {
+        "coverage": 0.7,
+        "accuracy": 0.9905
+      },
+      {
+        "coverage": 0.8,
+        "accuracy": 0.975
+      },
+      {
+        "coverage": 0.9,
+        "accuracy": 0.9704
+      },
+      {
+        "coverage": 1.0,
+        "accuracy": 0.9333
+      }
+    ]
+  },
+  "slices": {
+    "name_origin": {
+      "chinese": 0.9216,
+      "indian": 1.0,
+      "malay": 0.9388,
+      "other": 0.85
+    },
+    "receipt_language": {
+      "en": 0.9091,
+      "ms": 0.9412,
+      "zh": 1.0
+    },
+    "receipt_quality": {
+      "clean": 0.8947,
+      "illegible": 1.0,
+      "photo": 0.925,
+      "scan": 0.9778
+    },
+    "country": {
+      "MY": 0.9474,
+      "SG": 0.9091
+    }
+  },
+  "latency_s": {
+    "p50": 22.85,
+    "p95": 993.51
+  },
+  "cost_usd_per_claim": 0.0,
+  "system": "OpenAdjuster v2"
+}
