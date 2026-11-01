@@ -9,7 +9,7 @@ what to pay. A person approves every payout.
 It runs entirely on a laptop with a 1.6 GB open model. No claim data leaves the machine, and it
 costs nothing per claim.
 
-![Review screen: a forged receipt with the wrong patient name is sent to fraud review](docs/images/review-fraud.png)
+![Demo: a partial payout approved, a forged receipt sent to fraud review, and a blocked injection](docs/images/demo.gif)
 
 <!-- RESULTS:START -->
 **[Try the demo](https://mohamedmahdics.github.io/openadjuster-demo/)**: 20 recorded claims on
@@ -47,7 +47,13 @@ What these numbers don't hide:
   names). I haven't found out why.
 <!-- RESULTS:END -->
 
-<!-- OWNER: add "## Why I built this" here, 3-4 sentences in your own words. -->
+## Why I built this
+
+I wanted a project that shows how to make an AI system trustworthy, not just how to call a model.
+Insurance claims are a hard test for that: the documents are messy, some are forged, and a wrong
+answer costs real money. So I built the benchmark first, froze its held-out split, and then let the
+results decide the design. They showed that a small local model should read documents, and code
+should make the decisions.
 
 ## How it works
 
