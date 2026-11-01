@@ -16,7 +16,7 @@ costs nothing per claim.
 synthetic documents. It runs in the browser and nothing is saved.
 
 Results on [ClaimDocBench](https://github.com/MohamedMahdiCS/claimdocbench). I froze the system at
-commit `0a7683e` and ran `test` and the held-out split once each.
+commit `a2db6f4` and ran `test` and the held-out split once each.
 
 | | One prompt, `bonsai-2:4b` | OpenAdjuster, `test` | OpenAdjuster, held-out |
 |---|---:|---:|---:|
