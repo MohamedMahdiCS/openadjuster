@@ -47,9 +47,7 @@ What these numbers don't hide:
   names). I haven't found out why.
 <!-- RESULTS:END -->
 
-## Why I built this
-
-<!-- OWNER: 3-4 sentences in your own words. -->
+<!-- OWNER: add "## Why I built this" here, 3-4 sentences in your own words. -->
 
 ## How it works
 
